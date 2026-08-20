@@ -1,0 +1,5 @@
+uint32 id
+string name
+kinetics_observer_ros2/KineticsKinematics rest_kinematics
+geometry_msgs/Wrench state_wrench
+geometry_msgs/Wrench viscoelastic_wrench

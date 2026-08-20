@@ -1,0 +1,48 @@
+max_contacts: 3
+max_imus: 1
+sampling_time: 0.005
+mass: 50.0
+
+with_unmodeled_wrench: true
+with_gyro_bias: true
+with_acceleration_estimation: true
+with_damping_in_matrix_a: true
+with_adaptative_contact_process_covariance: true
+use_finite_difference_jacobians: false
+finite_difference_step: 1.0e-6
+
+covariances:
+  state_position_initial: [0.0, 0.0, 0.0]
+  state_orientation_initial: [1.0e-4, 1.0e-4, 0.0]
+  state_linear_velocity_initial: [0.0, 0.0, 0.0]
+  state_angular_velocity_initial: [0.0, 0.0, 0.0]
+  gyro_bias_initial: [1.0e-8, 1.0e-8, 1.0e-8]
+  unmodeled_wrench_initial: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+  contact_initial: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 400.0, 400.0, 400.0, 100.0, 100.0, 100.0]
+
+  state_position_process: [1.0e-12, 1.0e-12, 1.0e-12]
+  state_orientation_process: [1.0e-18, 1.0e-18, 1.0e-18]
+  state_linear_velocity_process: [1.0e-10, 1.0e-10, 1.0e-10]
+  state_angular_velocity_process: [1.0e-12, 1.0e-12, 1.0e-12]
+  gyro_bias_process: [1.0e-18, 1.0e-18, 1.0e-18]
+  unmodeled_wrench_process: [0.09, 0.09, 0.09, 0.09, 0.09, 0.09]
+  contact_process: [1.0e-10, 1.0e-10, 1.0e-10, 0.0, 0.0, 1.0e-8, 100.0, 100.0, 100.0, 25.0, 25.0, 25.0]
+
+  accelerometer: [1.0e-4, 1.0e-4, 1.0e-4]
+  gyroscope: [1.0e-8, 1.0e-8, 1.0e-8]
+  contact_wrench: [1.0e-8, 1.0e-8, 1.0e-8, 1.0e-10, 1.0e-10, 1.0e-10]
+
+contact_model:
+  linear_stiffness: [40000.0, 40000.0, 40000.0]
+  linear_damping: [120.0, 120.0, 120.0]
+  angular_stiffness: [400.0, 400.0, 400.0]
+  angular_damping: [12.0, 12.0, 12.0]
+  flat_odometry: false
+
+imus:
+  - {id: 0, name: Accelerometer}
+
+contacts:
+  - {id: 0, name: RightFootCenter, has_wrench_sensor: true}
+  - {id: 1, name: LeftFootCenter, has_wrench_sensor: true}
+  - {id: 2, name: LeftHandCloseContact, has_wrench_sensor: true}

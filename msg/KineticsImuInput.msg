@@ -1,0 +1,6 @@
+uint32 id
+geometry_msgs/Vector3 linear_acceleration
+geometry_msgs/Vector3 angular_velocity
+float64[9] accelerometer_covariance
+float64[9] gyroscope_covariance
+kinetics_observer_ros2/KineticsKinematics user_imu_kinematics
