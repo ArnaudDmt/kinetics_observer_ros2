@@ -1,6 +1,7 @@
 std_msgs/Header header
 kinetics_observer_ros2/KineticsKinematics global_centroid_kinematics
 kinetics_observer_ros2/KineticsKinematics local_centroid_kinematics
+kinetics_observer_ros2/KineticsKinematics global_floating_base_kinematics
 geometry_msgs/Wrench unmodeled_wrench
 kinetics_observer_ros2/KineticsGyroBias[] gyro_biases
 kinetics_observer_ros2/KineticsContactState[] contacts

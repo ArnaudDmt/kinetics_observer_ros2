@@ -11,15 +11,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(ament_cmake REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rosbag2_cpp REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 find_package(state-observation 1.3 REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/KineticsConfiguration.msg"
+  "msg/KineticsContactConfiguration.msg"
   "msg/KineticsContactInput.msg"
   "msg/KineticsContactState.msg"
   "msg/KineticsGyroBias.msg"
+  "msg/KineticsImuConfiguration.msg"
   "msg/KineticsImuInput.msg"
   "msg/KineticsInput.msg"
   "msg/KineticsKinematics.msg"
@@ -40,11 +43,15 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(kinetics_observer_bridge ${cpp_typesupport_target})
 
+add_executable(kinetics_offline_replay src/kinetics_offline_replay.cpp)
+target_link_libraries(kinetics_offline_replay kinetics_observer_bridge)
+ament_target_dependencies(kinetics_offline_replay rclcpp rosbag2_cpp)
+
 add_executable(kinetics_observer_node src/kinetics_observer_node.cpp)
 target_link_libraries(kinetics_observer_node kinetics_observer_bridge)
 ament_target_dependencies(kinetics_observer_node rclcpp)
 
-install(TARGETS kinetics_observer_bridge kinetics_observer_node
+install(TARGETS kinetics_observer_bridge kinetics_observer_node kinetics_offline_replay
   EXPORT export_kinetics_observer_bridge
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib
@@ -63,5 +70,5 @@ if(BUILD_TESTING)
 endif()
 
 ament_export_targets(export_kinetics_observer_bridge HAS_LIBRARY_TARGET)
-ament_export_dependencies(geometry_msgs rclcpp rosidl_default_runtime state-observation std_msgs)
+ament_export_dependencies(geometry_msgs rclcpp rosbag2_cpp rosidl_default_runtime state-observation std_msgs)
 ament_package()

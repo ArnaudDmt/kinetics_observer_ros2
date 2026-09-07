@@ -48,6 +48,25 @@ kinetics_observer_ros2::msg::KineticsConfiguration configuration()
   stateObservation::KineticsObserver reference(output.max_contacts, output.max_imus);
   output.initial_state.resize(static_cast<std::size_t>(reference.getStateSize()), 0.0);
   output.initial_state[static_cast<std::size_t>(reference.oriIndex() + 3)] = 1.0;
+
+  kinetics_observer_ros2::msg::KineticsImuConfiguration imu;
+  imu.id = 0;
+  identity(imu.accelerometer_covariance, 3, 1.0e-4);
+  identity(imu.gyroscope_covariance, 3, 1.0e-8);
+  output.imus.push_back(imu);
+
+  kinetics_observer_ros2::msg::KineticsContactConfiguration contact;
+  contact.id = 0;
+  contact.name = "contact";
+  contact.has_wrench_sensor = true;
+  identity(contact.initial_covariance, 12, 1.0e-4);
+  identity(contact.process_covariance, 12, 1.0e-6);
+  identity(contact.wrench_covariance, 6, 1.0e-4);
+  identity(contact.linear_stiffness, 3, 40000.0);
+  identity(contact.linear_damping, 3, 120.0);
+  identity(contact.angular_stiffness, 3, 400.0);
+  identity(contact.angular_damping, 3, 12.0);
+  output.contacts.push_back(contact);
   return output;
 }
 
@@ -92,17 +111,13 @@ TEST(KineticsObserverBridge, RunsSamplesAndContactLifecycle)
   kinetics_observer_ros2::msg::KineticsImuInput imu;
   imu.id = 0;
   imu.linear_acceleration.z = 9.81;
-  identity(imu.accelerometer_covariance, 3, 1.0e-4);
-  identity(imu.gyroscope_covariance, 3, 1.0e-8);
   imu.user_imu_kinematics.valid_fields = imu.user_imu_kinematics.ALL;
   imu.user_imu_kinematics.orientation.w = 1.0;
   input.imus.push_back(imu);
 
   kinetics_observer_ros2::msg::KineticsContactInput contact;
   contact.id = 0;
-  contact.name = "contact";
   contact.active = true;
-  contact.has_wrench_sensor = true;
   contact.initial_world_kinematics.valid_fields =
       contact.initial_world_kinematics.POSITION | contact.initial_world_kinematics.ORIENTATION
       | contact.initial_world_kinematics.LINEAR_VELOCITY | contact.initial_world_kinematics.ANGULAR_VELOCITY;
@@ -113,13 +128,6 @@ TEST(KineticsObserverBridge, RunsSamplesAndContactLifecycle)
                                                  | contact.user_contact_kinematics.ANGULAR_VELOCITY;
   contact.user_contact_kinematics.orientation.w = 1.0;
   contact.measured_wrench.force.z = 50.0 * 9.81;
-  identity(contact.initial_covariance, 12, 1.0e-4);
-  identity(contact.process_covariance, 12, 1.0e-6);
-  identity(contact.wrench_covariance, 6, 1.0e-4);
-  identity(contact.linear_stiffness, 3, 40000.0);
-  identity(contact.linear_damping, 3, 120.0);
-  identity(contact.angular_stiffness, 3, 400.0);
-  identity(contact.angular_damping, 3, 12.0);
   input.contacts.push_back(contact);
 
   const auto output = bridge.update(input);
@@ -129,6 +137,8 @@ TEST(KineticsObserverBridge, RunsSamplesAndContactLifecycle)
   }));
   EXPECT_EQ(output.gyro_biases.size(), 1u);
   EXPECT_EQ(output.contacts.size(), 1u);
+  EXPECT_TRUE(output.global_floating_base_kinematics.valid_fields
+              & output.global_floating_base_kinematics.POSITION);
 
   // A replay can contain a gap (e.g. one dropped transport sample). The
   // bridge must use the measured interval rather than reject the input.

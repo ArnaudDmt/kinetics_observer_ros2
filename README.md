@@ -4,6 +4,15 @@ ROS 2 wrapper around `stateObservation::KineticsObserver`. Package has no
 dependency on `mc_state_observation`; estimator configuration and all runtime
 inputs arrive through ROS messages.
 
+## Repository roles
+
+- `state-observation`: estimator library used by this wrapper.
+- `mc_state_observation`: mc_rtc observer/plugin that runs the estimator and
+  records `.bin` logs.
+- `kinetics_observer_ros2`: ROS 2 wrapper, messages, and node.
+- `test_state_obs_ros2`: `.bin` conversion, synchronized replay, inspection,
+  and comparison plots.
+
 ## Topics
 
 - Subscribe: `~/configuration` (`KineticsConfiguration`, reliable)
@@ -29,12 +38,16 @@ source install/setup.zsh
 
 ## Replay
 
-Generate self-contained input bag with tools in `test_state_obs_ros2`, then:
+Generate a self-contained input bag with `test_state_obs_ros2`, then launch the
+ROS 2 node. The input bag contains configuration plus timestamped estimator
+inputs; the output bag contains `/kinetics_observer/estimated_state`.
 
 ```bash
-ros2 launch kinetics_observer_ros2 kinetics_replay.launch.py \
+ros2 launch test_state_obs_ros2 test_kinetics_replay.launch.py \
   input_bag:=/tmp/kinetics_from_bin \
   output_bag:=/tmp/kinetics_estimated_state
 ```
 
-Output path must not already exist.
+Replay is synchronized: the next input is sent after the previous estimate is
+received. There is no `play_rate` argument. If the requested output directory
+already exists, the launch automatically appends `_1`, `_2`, and so on.

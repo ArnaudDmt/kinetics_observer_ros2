@@ -8,7 +8,9 @@
 #include <state-observation/dynamics-estimators/kinetics-observer.hpp>
 
 #include "kinetics_observer_ros2/msg/kinetics_configuration.hpp"
+#include "kinetics_observer_ros2/msg/kinetics_contact_configuration.hpp"
 #include "kinetics_observer_ros2/msg/kinetics_input.hpp"
+#include "kinetics_observer_ros2/msg/kinetics_imu_configuration.hpp"
 #include "kinetics_observer_ros2/msg/kinetics_kinematics.hpp"
 #include "kinetics_observer_ros2/msg/kinetics_state.hpp"
 
@@ -35,6 +37,8 @@ private:
 
   std::unique_ptr<stateObservation::KineticsObserver> observer_;
   std::unordered_map<std::uint32_t, ActiveContact> active_contacts_;
+  std::unordered_map<std::uint32_t, msg::KineticsImuConfiguration> imu_configurations_;
+  std::unordered_map<std::uint32_t, msg::KineticsContactConfiguration> contact_configurations_;
   std::uint32_t max_contacts_ = 0;
   std::uint32_t max_imus_ = 0;
   bool with_gyro_bias_ = false;
