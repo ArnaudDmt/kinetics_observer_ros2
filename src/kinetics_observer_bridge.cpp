@@ -22,6 +22,8 @@ using SO = stateObservation::KineticsObserver;
 using Kinematics = stateObservation::kine::Kinematics;
 using LocalKinematics = stateObservation::kine::LocalKinematics;
 
+constexpr double kProcessReferenceTimeStep = 0.005;
+
 stateObservation::Vector3 vector3(const geometry_msgs::msg::Vector3 & value)
 {
   if(!std::isfinite(value.x) || !std::isfinite(value.y) || !std::isfinite(value.z))
@@ -244,19 +246,30 @@ void KineticsObserverBridge::configure(const Configuration & configuration)
   observer->setContactInitCovMatDefault(
       matrix<12, 12>(configuration.contact_initial_covariance, "contact_initial_covariance"));
 
+  const double process_covariance_scale = configuration.sampling_time / kProcessReferenceTimeStep;
+  auto contact_process_covariance =
+      matrix<12, 12>(configuration.contact_process_covariance, "contact_process_covariance");
+  contact_process_covariance.block<3, 3>(0, 0) *= process_covariance_scale;
+  contact_process_covariance.block<3, 3>(3, 3) *= process_covariance_scale;
+
   observer->setKinematicsProcessCovarianceDefault(
-      matrix<3, 3>(configuration.state_position_process_covariance, "state_position_process_covariance"),
-      matrix<3, 3>(configuration.state_orientation_process_covariance, "state_orientation_process_covariance"),
+      matrix<3, 3>(configuration.state_position_process_covariance, "state_position_process_covariance")
+          * process_covariance_scale,
+      matrix<3, 3>(configuration.state_orientation_process_covariance, "state_orientation_process_covariance")
+          * process_covariance_scale,
       matrix<3, 3>(configuration.state_linear_velocity_process_covariance,
-                   "state_linear_velocity_process_covariance"),
+                   "state_linear_velocity_process_covariance")
+          * process_covariance_scale,
       matrix<3, 3>(configuration.state_angular_velocity_process_covariance,
-                   "state_angular_velocity_process_covariance"));
+                   "state_angular_velocity_process_covariance")
+          * process_covariance_scale);
   observer->setGyroBiasProcessCovarianceDefault(
-      matrix<3, 3>(configuration.gyro_bias_process_covariance, "gyro_bias_process_covariance"));
+      matrix<3, 3>(configuration.gyro_bias_process_covariance, "gyro_bias_process_covariance")
+      * process_covariance_scale);
   observer->setUnmodeledWrenchProcessCovarianceDefault(
-      matrix<6, 6>(configuration.unmodeled_wrench_process_covariance, "unmodeled_wrench_process_covariance"));
-  observer->setContactProcessCovarianceDefault(
-      matrix<12, 12>(configuration.contact_process_covariance, "contact_process_covariance"));
+      matrix<6, 6>(configuration.unmodeled_wrench_process_covariance, "unmodeled_wrench_process_covariance")
+      * process_covariance_scale);
+  observer->setContactProcessCovarianceDefault(contact_process_covariance);
   observer->resetStateCovarianceMat();
   observer->resetProcessCovarianceMat();
 
@@ -371,33 +384,36 @@ KineticsObserverBridge::State KineticsObserverBridge::update(const Input & input
     if(configured == contact_configurations_.end()) { throw std::invalid_argument("contact id has no configuration"); }
     const auto & contact_configuration = configured->second;
     auto active = active_contacts_.find(contact.id);
+    const bool new_contact = active == active_contacts_.end();
 
-    // The measured wrench is rotated into the contact frame the observer assumes. A calibration
-    // tilt leaks normal load into the tangential axes: on RHPS1 each foot reads 0.29x its normal
-    // force sideways, in a direction fixed to that foot, which statics rules out during single
-    // support. Left uncorrected the unmodeled wrench absorbs the resulting ~147 N, so it is no
-    // longer free to represent genuine unmodeled dynamics. Zero leaves the wrench untouched.
     auto measured_wrench = wrench(contact.measured_wrench);
-    {
-      const Eigen::Map<const stateObservation::Vector3> tilt(contact_configuration.wrench_tilt_correction.data());
-      const double angle = tilt.norm();
-      if(std::isfinite(angle) && angle > 0.0)
-      {
-        const stateObservation::Matrix3 rotation(Eigen::AngleAxisd(angle, tilt / angle));
-        // Force only. A sensor-frame rotation would tilt the torque equally, but the centre of
-        // pressure is already sensible before correction (well inside the sole) and this rotation
-        // moves it under 1.5 mm, so the torque carries no matching defect and is left alone.
-        measured_wrench.head<3>() = rotation * measured_wrench.head<3>();
-      }
-    }
     const auto user_kinematics = toStateObservation(contact.user_contact_kinematics);
-    if(active == active_contacts_.end())
+    if(new_contact)
     {
       const auto linear_stiffness = matrix<3, 3>(contact_configuration.linear_stiffness, "contact.linear_stiffness");
       const auto linear_damping = matrix<3, 3>(contact_configuration.linear_damping, "contact.linear_damping");
       const auto angular_stiffness = matrix<3, 3>(contact_configuration.angular_stiffness, "contact.angular_stiffness");
       const auto angular_damping = matrix<3, 3>(contact_configuration.angular_damping, "contact.angular_damping");
       auto world_contact = observer_->getGlobalKinematicsOf(user_kinematics);
+      const bool supplied_rest_pose =
+          (contact.initial_world_kinematics.valid_fields & (msg::KineticsKinematics::POSITION | msg::KineticsKinematics::ORIENTATION))
+          == (msg::KineticsKinematics::POSITION | msg::KineticsKinematics::ORIENTATION);
+      const bool pin_contact = !contact_configuration.has_wrench_sensor && angular_stiffness.isZero();
+      if(supplied_rest_pose || pin_contact)
+      {
+        if(supplied_rest_pose) { world_contact = toStateObservation(contact.initial_world_kinematics); }
+        else if(contact_configuration.flat_odometry) { world_contact.position()(2) = 0.0; }
+        observer_->addContact(
+            world_contact,
+            matrix<12, 12>(had_active_contacts ? contact_configuration.new_contact_initial_covariance
+                                                : contact_configuration.initial_covariance,
+                           "contact.initial_covariance"),
+            matrix<12, 12>(contact_configuration.process_covariance, "contact.process_covariance"),
+            static_cast<stateObservation::Index>(contact.id), linear_stiffness, linear_damping,
+            angular_stiffness, angular_damping);
+      }
+      else
+      {
       observer_->addContact(
           world_contact,
           matrix<12, 12>(had_active_contacts ? contact_configuration.new_contact_initial_covariance
@@ -406,6 +422,7 @@ KineticsObserverBridge::State KineticsObserverBridge::update(const Input & input
           matrix<12, 12>(contact_configuration.process_covariance, "contact.process_covariance"),
           static_cast<stateObservation::Index>(contact.id), linear_stiffness, linear_damping, angular_stiffness,
           angular_damping, measured_wrench.head<3>(), measured_wrench.tail<3>(), contact_configuration.flat_odometry);
+      }
       active_contacts_.emplace(contact.id, ActiveContact{contact_configuration.name});
     }
 
@@ -415,7 +432,11 @@ KineticsObserverBridge::State KineticsObserverBridge::update(const Input & input
       { return std::any_of(values.begin(), values.end(),
                            [](double value) { return std::isfinite(value) && value != 0.0; }); };
       stateObservation::Matrix6 covariance;
-      if(usable(contact.wrench_covariance_transform))
+      if(usable(contact.wrench_covariance))
+      {
+        covariance = matrix<6, 6>(contact.wrench_covariance, "contact.wrench_covariance");
+      }
+      else if(usable(contact.wrench_covariance_transform))
       {
         // The log carries the sensor->contact wrench transform, so the configured covariance can be
         // transported here rather than baked in upstream. This keeps contact_wrench tunable per replay.
@@ -425,17 +446,14 @@ KineticsObserverBridge::State KineticsObserverBridge::update(const Input & input
                      * matrix<6, 6>(contact_configuration.wrench_covariance, "contact.wrench_covariance")
                      * transform.transpose();
       }
-      else if(usable(contact.wrench_covariance))
-      {
-        covariance = matrix<6, 6>(contact.wrench_covariance, "contact.wrench_covariance");
-      }
       else { covariance = matrix<6, 6>(contact_configuration.wrench_covariance, "contact.wrench_covariance"); }
       observer_->updateContactWithWrenchSensor(measured_wrench, covariance, user_kinematics, contact.id);
     }
     else { observer_->updateContactWithNoSensor(user_kinematics, contact.id); }
   }
 
-  observer_->setAdditionalWrench(vector3(input.additional_wrench.force), vector3(input.additional_wrench.torque));
+  observer_->setAdditionalWrenchInCentroidFrame(vector3(input.additional_wrench.force),
+                                                vector3(input.additional_wrench.torque));
   const auto & state = observer_->update();
   if(!state.allFinite())
   {

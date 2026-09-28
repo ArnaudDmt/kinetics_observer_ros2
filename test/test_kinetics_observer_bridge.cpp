@@ -150,3 +150,48 @@ TEST(KineticsObserverBridge, RunsSamplesAndContactLifecycle)
     return std::isfinite(value);
   }));
 }
+
+TEST(KineticsObserverBridge, PaperPinContactsAndInitialRestPose)
+{
+  auto config = configuration();
+  config.with_gyro_bias = config.with_unmodeled_wrench = false;
+  auto & contact_config = config.contacts.front();
+  contact_config.has_wrench_sensor = false;
+  contact_config.angular_stiffness.fill(0.0);
+  contact_config.angular_damping.fill(0.0);
+  contact_config.angular_damping[8] = 12.0;
+  contact_config.initial_covariance.fill(0.0);
+  contact_config.process_covariance.fill(0.0);
+  kinetics_observer_ros2::msg::KineticsInput input;
+  input.header.stamp.nanosec = 5'000'000;
+  input.inertia = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+  kinetics_observer_ros2::msg::KineticsImuInput imu;
+  imu.linear_acceleration.z = 9.81;
+  imu.user_imu_kinematics.valid_fields = imu.user_imu_kinematics.ALL;
+  imu.user_imu_kinematics.orientation.w = 1;
+  input.imus.push_back(imu);
+  kinetics_observer_ros2::msg::KineticsContactInput contact;
+  contact.active = true;
+  contact.user_contact_kinematics = imu.user_imu_kinematics;
+  input.contacts.push_back(contact);
+  for(bool supplied_pose : {false, true})
+  {
+    auto & initial = input.contacts.front().initial_world_kinematics;
+    initial.valid_fields = supplied_pose ? initial.POSITION | initial.ORIENTATION : 0;
+    initial.orientation.z = std::sin(M_PI / 12);
+    initial.orientation.w = std::cos(M_PI / 12);
+    kinetics_observer_ros2::KineticsObserverBridge first, second;
+    first.configure(config);
+    second.configure(config);
+    input.contacts.front().measured_wrench.force.z = 0;
+    const auto reference = first.update(input);
+    input.contacts.front().measured_wrench.force.z = 1e6;
+    input.contacts.front().measured_wrench.torque.x = 1e6;
+    const auto output = second.update(input);
+    EXPECT_EQ(reference.raw_state, output.raw_state);
+    EXPECT_TRUE(std::all_of(output.raw_state.begin(), output.raw_state.end(), [](double v) { return std::isfinite(v); }));
+    ASSERT_EQ(output.contacts.size(), 1u);
+    EXPECT_NEAR(std::abs(output.contacts.front().rest_kinematics.orientation.z),
+                supplied_pose ? std::sin(M_PI / 12) : 0, 1e-9);
+  }
+}

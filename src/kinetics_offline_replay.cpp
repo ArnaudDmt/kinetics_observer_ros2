@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -63,9 +64,10 @@ int main(int argc, char ** argv)
   rclcpp::init(argc, argv);
   try
   {
-    if(argc != 4)
+    if(argc != 4 && argc != 5)
     {
-      throw std::invalid_argument("usage: kinetics_offline_replay INPUT_BAG CONFIGURATION_BAG OUTPUT_TRAJECTORY");
+      throw std::invalid_argument(
+          "usage: kinetics_offline_replay INPUT_BAG CONFIGURATION_BAG OUTPUT_TRAJECTORY [STATE_DUMP]");
     }
     kinetics_observer_ros2::KineticsObserverBridge bridge;
     bridge.configure(readConfiguration(argv[2]));
@@ -73,8 +75,19 @@ int main(int argc, char ** argv)
     if(!output) { throw std::runtime_error("cannot open output trajectory: " + std::string(argv[3])); }
     output << "# timestamp tx ty tz qx qy qz qw\n";
 
+    std::ofstream dump;
+    if(argc == 5)
+    {
+      dump.open(argv[4]);
+      if(!dump) { throw std::runtime_error("cannot open state dump: " + std::string(argv[4])); }
+      dump << "# timestamp field... (one line per tick)\n";
+    }
+
     rosbag2_cpp::Reader reader;
     reader.open(argv[1]);
+    std::size_t skip = 0;
+    if(const char * env = std::getenv("KO_SKIP_INPUTS")) { skip = std::stoul(env); }
+    std::size_t skipped = 0;
     std::size_t count = 0;
     double first_stamp = 0.0;
     double last_stamp = 0.0;
@@ -83,10 +96,39 @@ int main(int argc, char ** argv)
     {
       auto bag_message = reader.read_next();
       if(bag_message->topic_name != input_topic) { continue; }
+      if(skipped < skip) { ++skipped; continue; }
       const auto input = deserialize<kinetics_observer_ros2::msg::KineticsInput>(bag_message);
       const double stamp = seconds(input.header.stamp);
       const auto state = bridge.update(input);
       writePose(output, stamp, state.global_floating_base_kinematics);
+      if(dump.is_open())
+      {
+        dump << std::setprecision(17) << stamp;
+        const auto & c = state.global_centroid_kinematics;
+        dump << " centroid " << c.position.x << ' ' << c.position.y << ' ' << c.position.z
+             << ' ' << c.orientation.x << ' ' << c.orientation.y << ' ' << c.orientation.z << ' '
+             << c.orientation.w << ' ' << c.linear_velocity.x << ' ' << c.linear_velocity.y << ' '
+             << c.linear_velocity.z << ' ' << c.angular_velocity.x << ' ' << c.angular_velocity.y
+             << ' ' << c.angular_velocity.z;
+        dump << " unmodeled " << state.unmodeled_wrench.force.x << ' ' << state.unmodeled_wrench.force.y
+             << ' ' << state.unmodeled_wrench.force.z << ' ' << state.unmodeled_wrench.torque.x << ' '
+             << state.unmodeled_wrench.torque.y << ' ' << state.unmodeled_wrench.torque.z;
+        for(const auto & bias : state.gyro_biases)
+        {
+          dump << " gyrobias " << bias.id << ' ' << bias.bias.x << ' ' << bias.bias.y << ' ' << bias.bias.z;
+        }
+        for(const auto & contact : state.contacts)
+        {
+          const auto & r = contact.rest_kinematics;
+          dump << " contact " << contact.name << ' ' << r.position.x << ' ' << r.position.y << ' '
+               << r.position.z << ' ' << r.orientation.x << ' ' << r.orientation.y << ' '
+               << r.orientation.z << ' ' << r.orientation.w << ' ' << contact.state_wrench.force.x << ' '
+               << contact.state_wrench.force.y << ' ' << contact.state_wrench.force.z << ' '
+               << contact.state_wrench.torque.x << ' ' << contact.state_wrench.torque.y << ' '
+               << contact.state_wrench.torque.z;
+        }
+        dump << '\n';
+      }
       if(count++ == 0) { first_stamp = stamp; }
       last_stamp = stamp;
     }
