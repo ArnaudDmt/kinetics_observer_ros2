@@ -9,9 +9,6 @@ bool with_gyro_bias
 bool with_acceleration_estimation
 bool with_damping_in_matrix_a
 bool with_adaptative_contact_process_covariance
-# Weights the mean that the adaptive contact process covariance pins, by contact load:
-# w_i ~ f_i^exponent. 0 keeps the arithmetic mean (unchanged behaviour), 1 is load-proportional.
-float64 contact_cov_load_weight_exponent
 
 # Project the state update off the unobservable global-yaw direction. Default false keeps the
 

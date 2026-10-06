@@ -230,7 +230,6 @@ void KineticsObserverBridge::configure(const Configuration & configuration)
   observer->setWithAccelerationEstimation(configuration.with_acceleration_estimation);
   observer->setWithDampingInMatrixA(configuration.with_damping_in_matrix_a);
   observer->setWithAdaptativeContactProcessCov(configuration.with_adaptative_contact_process_covariance);
-  observer->setContactCovLoadWeightExponent(configuration.contact_cov_load_weight_exponent);
 
   observer->setKinematicsInitCovarianceDefault(
       matrix<3, 3>(configuration.state_position_initial_covariance, "state_position_initial_covariance"),
